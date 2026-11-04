@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "paths": {
+      "@subboost/core": ["./packages/core/src/index.ts"],
+      "@subboost/core/*": ["./packages/core/src/*"],
+      "@subboost/server-core/*": ["./packages/server-core/src/*"],
+      "@subboost/ui/*": ["./packages/ui/src/*"]
+    },
+    "target": "ES2017"
+  },
+  "include": ["packages/**/*.ts", "packages/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

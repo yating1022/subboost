@@ -1,0 +1,204 @@
+# AGENTS.md
+
+本文件是交给 AI 编码代理与本仓库贡献者的开发规范。修改代码前先读一遍；
+`docs/CONTRIBUTING.md` 面向人类贡献者，这里补充代理执行任务时必须遵守的约束。
+
+## 项目定位
+
+SubBoost Worker Lite 是 Cloudflare Workers + Workers KV 上的 Clash/Mihomo 订阅聚合服务，
+只依赖 Workers 运行时，没有数据库、容器或常驻进程。管理端是一个构建期产出的 SPA。
+
+技术栈：TypeScript、React 19、Vite 8、Tailwind CSS v4、Radix UI、Vitest、wrangler。
+
+## 仓库结构
+
+```
+worker/            Worker 后端（API 路由、KV 存储、定时任务）+ 管理端 SPA
+  src/             后端源码
+  ui/              管理端 React 源码（构建产物到 worker/dist）
+packages/core/     订阅解析与配置生成（纯逻辑，无运行时依赖）
+packages/server-core/  响应头、UA 等跨形态共享逻辑
+packages/ui/       共享 UI 组件、主题变量、样式
+scripts/           构建、部署、仓库校验脚本
+docs/              实施方案、贡献指南、第三方声明
+test/              回归测试与测试基础设施
+```
+
+## 必须执行的校验
+
+提交前至少跑完以下四项，任何一项失败都不得声称完成：
+
+```powershell
+npm run lint                 # ESLint + UI 一致性 + 仓库卫生 + 版本一致性
+npm run test:unit            # 全量单元/回归测试
+npm run worker:typecheck     # 后端与管理端类型检查
+npm run worker:build         # 确认产物可构建
+```
+
+只改了纯逻辑（`packages/core`）时可先跑 `npm run test:core` 快速反馈，但最终仍需全量。
+只在无头环境能验证的事情不作为已通过的结论；无法验证时必须明确说明未验证项与风险。
+
+## 每次改动后开本地预览并交回可用的访问信息（强制）
+
+改完管理端（`worker/ui`、`packages/ui`）或任何会影响页面渲染的代码后，
+**主动启动本地预览并在回复末尾给出可直接复制使用的访问信息**，不要等用户来问，
+也不要只说"已改完"就结束。
+
+必须交回的内容：
+
+- 地址：`http://127.0.0.1:8799`（端口固定 8799，不随意更换）
+- 管理端 token：从**仓库根目录**的 `.dev.vars` 读取 `ADMIN_TOKEN`（值可能带引号，
+  读取时 `.Trim('"')`）。本地值班用 `.dev.vars` 里已有的测试值即可，
+  该文件已被 gitignore，**绝不允许超出本地范围使用**。
+- 前端 localStorage 键：`subboost-worker-admin-token`（token）、`subboost-theme`（主题）
+- 本次改动对应的页面路由，例如 `#/sources`、`#/subscriptions`、`#/status`
+
+标准启动方式：
+
+```powershell
+# 先确认没有旧实例争用端口：多个 wrangler 同时监听 8799 会导致 TCP 可连但 HTTP 挂起
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+  Where-Object { $_.CommandLine -like '*wrangler*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+Get-Process workerd -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 3
+
+npx wrangler dev --port 8799 --local
+```
+
+启动后约 20–25 秒再探活，**必须返回 200 才能告诉用户可用**：
+
+```powershell
+(Invoke-WebRequest -Uri 'http://127.0.0.1:8799/api/state' -TimeoutSec 10 -SkipHttpErrorCheck `
+  -Headers @{ Authorization = 'Bearer <ADMIN_TOKEN>' }).StatusCode   # 期望 200
+```
+
+规则：
+
+- 启动是幂等的：本地预览没有自动热更新，**每次改完都要重新 `npm run worker:build`
+  再重启 wrangler**，否则用户看到的是旧产物。
+- 不要把 `wrangler dev` 的进程留着跨轮次不管；下一轮改动前先按上面的清理步骤收尾。
+- token 只能出现在本机回复里，不许写进 commit、PR 正文、README、测试或任何会公开的位置。
+- 探活失败时如实说明失败状态与原因，不要把"进程起来了"当成"可以访问"。
+
+## 版本号规范（强制）
+
+版本号的单一来源是**根 `package.json` 的 `version`**。worker 运行时读取
+`worker/package.json` 的 version 并通过 `/api/state` 返回，管理端页头显示同一值，
+README 徽章也需一致。任何一次功能变更、缺陷修复或行为调整，都必须同步版本号。
+
+不要手工逐个改文件，用脚本：
+
+```powershell
+npm run check:version                    # 校验所有位置是否一致
+npm run version:set -- 0.2.0             # 同步写入全部位置
+node scripts/check-version.cjs --set 0.2.0 --dry-run   # 只预览
+```
+
+脚本会同步：5 个 `package.json`、README 徽章（含 alt）、以及断言了具体版本号的
+`worker/src/router.test.ts` 与 `worker/ui/src/components/render.test.ts`。
+改完版本必须重跑 `npm run test:unit`，否则硬编码版本的断言会红。
+
+版本号规则（遵循 semver）：
+
+- `0.x.y` 阶段：新功能升 `x`，缺陷修复升 `y`，破坏性变更升 `x` 并写进说明。
+- 不允许把版本号留在一个提交里不变而声称"已完成本次变更"。
+
+## 提交规范
+
+- 提交信息用中文，采用 Conventional Commits 前缀：`feat:`、`fix:`、`refactor:`、`docs:`、`test:`、`chore:`。
+- 一次提交只做一件事；重构与行为变更不要混在一起。
+- 提交信息里要能看出用户可见影响；仅内部调整时说明动机。
+- 未经用户明确要求，不执行 `git push`，也不做 `reset --hard`、`rebase`、`commit --amend`
+  等重写历史或丢弃改动的操作。
+
+## 脱敏红线（最高优先级）
+
+任何会进入公开可见位置的内容——README、提交信息、PR 正文、Issue、文档、测试样例、
+配置示例、截图——一律不得包含用户的真实信息：公网 IPv4/IPv6、网段、ASN、域名、
+主机名、Token、密码、私钥、Cookie、连接串、订阅链接、`.env` 内容。
+
+写之前就用占位符，不要先写真实值再回头改：
+
+- IPv4 用 RFC 5737：`192.0.2.0/24`、`198.51.100.0/24`、`203.0.113.0/24`
+- IPv6 用 RFC 3849：`2001:db8::/32`
+- 域名用 `example.com` / `example.org`
+- 凭据用 `<token>`、`<password>` 等占位符
+
+本地联调用的临时密钥只能放 `.dev.vars`（已被 gitignore），用测试值（例如
+`localtest-fixture-...` 前缀），不要用真实凭据。`npm run lint` 会拦截疑似真实密钥。
+
+## 代码约定
+
+### 通用
+
+- 延续现有架构与风格，不做无关重构；改动聚焦在任务范围内。
+- 保留用户已有的未提交改动，不覆盖、不回退非本任务产生的修改。
+- 新增逻辑尽量放在 `packages/` 的纯函数里并配单元测试；`worker/src` 负责 IO 与路由编排。
+- 不要引入新的运行时依赖，除非确有必要并在说明中给出理由。当前运行时只依赖
+  React、lucide-react、qrcode.react 与 `@subboost/*`。
+
+### 颜色与主题（有强校验）
+
+界面同时支持深色与浅色主题，颜色必须来自主题令牌，不得写死深色值。
+在 `packages/ui/src/styles/theme.css` 中同时为 `:root/[data-theme="dark"]` 与
+`[data-theme="light"]` 定义变量，再通过生成的工具类使用：
+
+- 文本：`text-fg`、`text-fg-60`、`text-fg-45`
+- 填充与描边：`bg-ink/5`、`border-ink/10`
+- 表面：`bg-surface`、`bg-surface-raised`、`bg-header`、`bg-overlay`
+
+以下写法会被 `npm run check:ui-consistency` 直接拒绝：`text-white/60`、
+`bg-white/5`、`border-white/10`、`bg-black/40`、`bg-[#0a0a0a]`、`text-zinc-950`、
+`color-scheme: dark`。新增颜色变量要同时改两个主题块。
+
+### 组件使用
+
+- 业务代码不得直接 `import "@radix-ui/react-*"`，必须用 `packages/ui/src/components/ui/`
+  下的包装组件。
+- 图标按钮用 `IconButton` 且必须传 `label`；不要用 `Button size="icon"`。
+- 裸 `<Switch>` 必须提供 `aria-label` 或 `aria-labelledby`，优先用 `SwitchField`。
+- 不要在 `<a>` 里嵌套 `<Button>`，改用 `Button asChild`。
+- 图标统一用 lucide-react，不用 emoji 代替功能图标。
+
+### 动效（有强校验）
+
+`packages/ui/src/styles/motion.test.ts` 会守护动效约定：
+
+1. **不要在整页/弹窗/菜单的关键帧里使用 `transform`**，改用独立的 `opacity` /
+   `translate` / `scale` 属性。`transform: scale()` 会让文字逐帧重新栅格化，
+   表现为动画期间发虚、结束时突变清晰，观感像"跑过头又被拉回"。
+2. 整页入场（`pageIn`）**不得使用 `scale`**，用 `translate` 位移即可。
+3. Radix 组件的退场动画必须挂在 `data-[state=closed]` 上，Radix Presence 依赖
+   `animationend` 才卸载节点；只写进场动画等于关闭时硬切。
+4. 新增动效通过 `@theme` 的 `--animate-*` 令牌注册，并在 `globals.css` 定义对应
+   `@keyframes`，同时补进 `motion.test.ts` 的期望表。
+5. 入场动画用 `backwards` 而非 `both`，避免动画结束后留下合成层。
+6. 尊重 `prefers-reduced-motion`，全局降级规则已存在，不要移除。
+7. 如果面板背景本身不透明，不要再叠 `backdrop-blur`——它没有视觉效果却要每帧
+   对整块背景做模糊，是开合卡顿的常见原因。
+
+### 测试
+
+- 新增行为要有测试；修复缺陷要有能复现该缺陷的回归测试。
+- 测试数据只用上面「脱敏红线」里的保留地址与占位符。
+- 断言 UI 时优先断言语义文本与可访问属性，避免断言脆弱的类名。
+
+## 常见任务流程
+
+新增一个管理端功能：
+
+1. 后端在 `worker/src` 增加路由与 KV 读写，补 `*.test.ts`。
+2. 管理端在 `worker/ui/src` 增加组件，复用 `packages/ui` 组件与主题令牌。
+3. 更新类型（`worker/ui/src/lib/types.ts`）。
+4. `npm run version:set -- <新版本>`，再跑必跑校验四项。
+5. 需要时同步 README 截图与文档。
+
+只改文档或注释：至少跑 `npm run lint`（含版本与仓库卫生检查）。
+
+## 部署相关（谨慎）
+
+- `wrangler.jsonc` 里的 KV `id` 必须是占位符 `REPLACE_WITH_KV_NAMESPACE_ID`，
+  真实 id 由部署脚本注入，不进仓库。
+- `ADMIN_TOKEN`、`ENCRYPTION_KEY` 只能作为 Worker Secret 或 `.dev.vars` 存在。
+- 涉及部署、改密钥、改 CI 配置的操作，执行前必须先说明目标与影响并取得确认。

@@ -1,0 +1,36 @@
+{
+  // SubBoost Worker Lite：仅依赖 Workers + Workers KV 的精简部署形态。
+  // 配置刻意放在仓库根目录，让 Cloudflare Workers Builds 的默认命令零配置可用：
+  //   Root directory    /
+  //   Build command     留空（依赖安装阶段的 `prepare` 会自动构建 UI 与 Worker）
+  //   Deploy command    npx wrangler deploy
+  //   Preview command   npx wrangler preview
+  // 密钥与资源标识都不进仓库：
+  //   - ADMIN_TOKEN / ENCRYPTION_KEY 走 Worker Secret（`wrangler secret put` 或 Dashboard）
+  //   - SUBBOOST_KV 的 namespace id 由 `npm run worker:deploy` 在部署时注入（见 scripts/prepare-deploy-config.mjs）
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "subboost",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./worker/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/sub/*", "/__scheduled"]
+  },
+  // 占位符只用于本地 `wrangler dev`（本地模式不读真实 id）。
+  // 真实 id 由部署脚本从环境变量 SUBBOOST_KV_ID 注入到临时配置文件，不写入本文件。
+  "kv_namespaces": [
+    { "binding": "SUBBOOST_KV", "id": "ec30185a9bbb40a2ac9d7fc176ce94eb" }
+  ],
+  "triggers": { "crons": ["0 */12 * * *"] },
+  // 密钥不进仓库：ADMIN_TOKEN / ENCRYPTION_KEY 必须用 `npx wrangler secret put <NAME>`
+  // 或在 Cloudflare Dashboard → Worker → Settings → Variables and Secrets 里添加为 Secret 类型。
+  "vars": { "APP_NAME": "SubBoost Lite" },
+  // 非生产分支由 `npx wrangler preview` 部署，该命令要求存在 previews 块（可以为空）。
+  // 预览环境不继承顶层 vars / kv_namespaces / secrets；需要可用的预览运行时，
+  // 在此补充 previews.kv_namespaces（指向独立 KV）并执行 `npx wrangler preview base-config secret put <NAME>`。
+  "previews": {},
+  "observability": { "enabled": true }
+}

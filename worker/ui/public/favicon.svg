@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="SubBoost">
+  <title>SubBoost</title>
+  <rect width="64" height="64" rx="16" fill="#0C0D0F" />
+  <rect x="0.6" y="0.6" width="62.8" height="62.8" rx="15.4" fill="none" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="1.2" />
+  <g transform="translate(32 32) scale(1.15) translate(-32 -32)" fill="none" stroke-linecap="round" stroke="#E4E1DA" stroke-opacity="0.6" stroke-width="4">
+    <path d="M9 21h14c8 0 13 11 20 11" />
+    <path d="M9 43h14c8 0 13-11 20-11" />
+  </g>
+  <path transform="translate(32 32) scale(1.15) translate(-32 -32)" d="M9 32h47" fill="none" stroke="#F2EFEA" stroke-width="4" stroke-linecap="round" />
+</svg>

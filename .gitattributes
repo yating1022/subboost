@@ -1,0 +1,3 @@
+*.sh text eol=lf
+.nvmrc text eol=lf
+.node-version text eol=lf

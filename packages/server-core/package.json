@@ -1,0 +1,15 @@
+{
+  "name": "@subboost/server-core",
+  "version": "0.4.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./http": "./src/http.ts",
+    "./subscription/response-headers": "./src/subscription/response-headers.ts",
+    "./subscription/user-agents": "./src/subscription/user-agents.ts"
+  },
+  "dependencies": {
+    "@subboost/core": "file:../core"
+  }
+}

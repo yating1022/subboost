@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@subboost/core": ["../core/src/index.ts"],
+      "@subboost/core/*": ["../core/src/*"],
+      "@subboost/ui": ["./src/index.ts"],
+      "@subboost/ui/*": ["./src/*"]
+    },
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
+}

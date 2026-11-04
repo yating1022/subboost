@@ -1,0 +1,85 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const themeCss = readFileSync(join(__dirname, "theme.css"), "utf8");
+
+/**
+ * 把 `:root, [data-theme="dark"] { ... }` 与 `[data-theme="light"] { ... }`
+ * 两个块里的自定义属性名都抽出来，用于对等性比较。
+ */
+function blockNames(startPattern: RegExp): Set<string> {
+  const start = themeCss.search(startPattern);
+  if (start < 0) return new Set();
+  const from = themeCss.indexOf("{", start);
+  let depth = 0;
+  let end = from;
+  for (let i = from; i < themeCss.length; i += 1) {
+    if (themeCss[i] === "{") depth += 1;
+    else if (themeCss[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  const body = themeCss.slice(from, end);
+  // 只看 `--name: value;` 形式的定义，注释与嵌套规则里的也会命中，但名字是唯一的
+  return new Set([...body.matchAll(/(--[\w-]+)\s*:/gu)].map((match) => match[1]));
+}
+
+const darkNames = blockNames(/:root,\s*\n\s*\[data-theme="dark"\]/u);
+const lightNames = blockNames(/\[data-theme="light"\]/u);
+const themeBlockNames = blockNames(/@theme inline/u);
+
+describe("theme token parity", () => {
+  it("parses both theme blocks instead of silently matching nothing", () => {
+    // 正则若与写法漂移，后面的对等性断言会变成空跑的假绿
+    expect(darkNames.size).toBeGreaterThan(50);
+    expect(lightNames.size).toBeGreaterThan(50);
+    expect(themeBlockNames.size).toBeGreaterThan(50);
+  });
+
+  /**
+   * 浅色块定义、深色块漏定义，会让 `bg-surface-raised` 这类工具类在深色下
+   * 解析成空值 —— 元素背景直接消失（下拉菜单透明、卡片透出底图）。
+   * 这类缺失不会报错、不会构建失败，只在切到深色时看得见，所以必须靠测试守住。
+   */
+  it("defines every light-theme token in the dark block too", () => {
+    const missing = [...lightNames].filter((name) => !darkNames.has(name));
+    expect(missing).toEqual([]);
+  });
+
+  /**
+   * 反方向不需要强制对等：深色块里的 `--glow-*` 等装饰令牌在浅色主题下
+   * 沿用 `:root` 的继承值即可，不算缺陷。真正会掉背景的是「浅色块定义了、
+   * 深色块漏了」——上面那条已经守住。
+   */
+  it("keeps inherited-only tokens out of the light block requirement", () => {
+    const darkOnly = [...darkNames].filter((name) => !lightNames.has(name));
+    // 允许存在，但必须是我们已知的装饰类令牌，避免将来漏掉语义令牌也当成"可继承"
+    expect(darkOnly.sort()).toEqual(["--glow-indigo", "--glow-primary"]);
+  });
+
+  /**
+   * `@theme inline` 把语义令牌映射成 Tailwind 工具类。
+   * 映射的目标变量若在两套主题里都没定义，工具类同样会解析成空值。
+   */
+  it("maps every @theme inline color to a token that both themes define", () => {
+    const targets = [...themeCss.matchAll(/--color-[\w-]+:\s*var\((--[\w-]+)\)/gu)].map(
+      (match) => match[1]
+    );
+    expect(targets.length).toBeGreaterThan(20);
+    const undefinedTargets = [...new Set(targets)].filter(
+      (name) => !darkNames.has(name) || !lightNames.has(name)
+    );
+    expect(undefinedTargets).toEqual([]);
+  });
+
+  it("keeps the raised and popover surfaces opaque enough for a dropdown", () => {
+    // 下拉菜单直接用它做背景：没有明确值就等于透明浮层
+    expect(darkNames.has("--surface-raised")).toBe(true);
+    expect(darkNames.has("--surface-popover")).toBe(true);
+  });
+});
